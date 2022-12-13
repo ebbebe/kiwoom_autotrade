@@ -32,7 +32,7 @@ class Kiwoom(QAxWidget):
         self.password = "1234" # 비밀번호
         self.BUY = 1 # 신규매수
         self.SELL = 2 # 신규매도
-        self.SELL_STANDARD_PERCENTAGE = -2.5
+        self.SELL_STANDARD_PERCENTAGE = -2
         self.BOUGHT_STOCK_LIST = dict() # 보유 주식 리스트
         self.idx = 0
         ########################
@@ -150,16 +150,27 @@ class Kiwoom(QAxWidget):
         """
         print("stock_slot 메시지 확인: %s " % msg)
         
-    def real_data_slot(self, sCode, sRealType, sRealData):
+    def real_data_slot(self, sCode, sRealType):
         
         if sRealType == "종목프로그램매매":
-            now_price = self.dynamicCall("GetCommRealData(String, int)", sCode, 10)
+            now_price = abs(float(self.dynamicCall("GetCommRealData(String, int)", sCode, 10)))
             self.idx += 1
             print(f"종목프로그램매매 : 종목명: {self.BOUGHT_STOCK_LIST[sCode]['종목명']}, 종목코드: {sCode} 현재가: {abs(int(now_price))}, {self.idx} 번째 ")
             
             # 수익률 계산
             quantity = self.BOUGHT_STOCK_LIST[sCode]['보유수량']
-            self.dynamicCall("GetCommRealData(String, int)", sCode, 10)
+            bought_price = float(self.BOUGHT_STOCK_LIST[sCode]['매입가'])
+            percent = ((now_price - bought_price) / bought_price) * 100
+            print(f"percent : {percent}, 매입가: {bought_price}, 현재가: {now_price}")
+            if percent <= self.SELL_STANDARD_PERCENTAGE:
+                self.trade_stock(sCode, quantity, 2)
+                print("@@@@@@@@@@@@@@@@@팔림??@@@@@@@@@@@@@@@@@@@@@@")
+                # 팔렸을 때 실시간 조회 등록 내리고 왠만하면 bought_stock_list 한번 초기화해주기
+                # 사고 팔 때 리스트 초기화하는 함수가 있어야 할 듯
+                # 수익률 계산식 다소 이상함 더 알아보기
+                
+            
+            
             
         self.regit_realTime_data_loop.exit()
 
@@ -340,13 +351,6 @@ class Kiwoom(QAxWidget):
             mystock = self.dynamicCall("GetCommData(String, String, int, String)", sTrCode, sRQName, 0, "총매입금액")
             print("계좌평가현황: %s" % mystock)
             self.mystock_value_now_loop.exit()
-        
-        if sRQName == "매입가요청":
-            purchase_price = self.dynamicCall("GetCommData(String, String, int, String)", sTrCode, sRQName, 0, "매입가")
-
-            print("purchase_price : %s " % purchase_price)
-
-            self.get_purchase_price_loop.exit()
         
         if sRQName == "구매주식정보조회":
             mystock_count = self.dynamicCall("GetRepeatCnt(String, String)", sTrCode, sRQName)
