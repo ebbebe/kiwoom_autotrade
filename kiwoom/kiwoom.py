@@ -4,6 +4,7 @@ from config_.errorCode import *
 import schedule
 import time
 import datetime
+import math
 
 
 class Kiwoom(QAxWidget):
@@ -34,11 +35,19 @@ class Kiwoom(QAxWidget):
         self.password = "1234" # 비밀번호
         self.BUY = 1 # 신규매수
         self.SELL = 2 # 신규매도
-        self.SELL_STANDARD_PERCENTAGE = -2
+        
+        self.BUY_STANDARD_AMOUNT = 500000 # 매수 비중
+        self.LOSS_BASED_PERCENTAGE = -2 # 손절시 전량 매도 퍼센트 기준
+        self.PROFIT_BEGINNING_PERCENTAGE = 3 # 몇퍼센트 올랐을 때 매도 할 것인지 첫번째 기준
+        self.PROFIT_MIDDLE_PERCENTAGE = 7 # 두번째 기준
+        self.PROFIT_END_PERCENTAGE = 10 # 세번째 기준
+        self.SELL_BEGINNING_PERCENTAGE = 20 # 첫번째 매도시 몇퍼센트 매도할 것인지
+        self.SELL_MIDDLE_PERCENTAGE = 30 # 두번째 매도시 몇퍼센트 매도할 것인지
+        
+        
         self.idx = 0
         self.CONDITION_NAME = "1분봉단타"
-        
-        self.BㅃOUGHT_STOCK_LIST = dict() # 보유 주식 리스트
+        self.BOUGHT_STOCK_LIST = dict() # 보유 주식 리스트
         self.account_stock_dict = {} # 영상 강의 학습용 딕셔너리
         self.not_account_stock_dict = {} # 영상 강의 학습용 딕셔너리
         ########################
@@ -75,20 +84,6 @@ class Kiwoom(QAxWidget):
         self.regit_realTime_data()
         
         
-        # for i in range(3):
-        #     self.trade_stock() # 장시간 동안 매매 반복
-        #self.trade_stock() # 장시간 동안 매매 반복
-        # self.check_stock()
-        # self.trade_stock("140070", 1, self.SELL)
-        
-        
-        
-        
-        # while True:
-        #     print("#@@@@@")
-        #     schedule.run_pending()
-        #     time.sleep(1)
-    
         
     def get_ocx_instance(self):
         self.setControl("KHOPENAPI.KHOpenAPICtrl.1")
@@ -168,6 +163,8 @@ class Kiwoom(QAxWidget):
     def real_data_slot(self, sCode, sRealType):
         
         if sRealType == "종목프로그램매매":
+            #현재 보유 하고 있는 주식을 실시간 데이터에 등록해 판매하기 위해 대기중
+            
             now_price = abs(float(self.dynamicCall("GetCommRealData(String, int)", sCode, 10)))
             self.idx += 1
             # print(f"종목프로그램매매 : 종목명: {self.BOUGHT_STOCK_LIST[sCode]['종목명']}, 종목코드: {sCode} 현재가: {abs(int(now_price))}, {self.idx} 번째 ")
@@ -177,12 +174,26 @@ class Kiwoom(QAxWidget):
             bought_price = float(self.BOUGHT_STOCK_LIST[sCode]['매입가'])
             percent = round(((now_price - bought_price) / bought_price) * 100, 2)
             # print(f"percent : {percent}, 매입가: {bought_price}, 현재가: {now_price}")
-            if percent <= self.SELL_STANDARD_PERCENTAGE:
+            
+            if percent <= self.LOSS_BASED_PERCENTAGE:
+                #손실나서 전량 매도
                 self.trade_stock(sCode, quantity, 2)
                 print("@@@@@@@@@@@@@@@@@팔림??@@@@@@@@@@@@@@@@@@@@@@")
-                # 팔렸을 때 실시간 조회 등록 내리고 왠만하면 bought_stock_list 한번 초기화해주기
-                # 사고 팔 때 리스트 초기화하는 함수가 있어야 할 듯
-                # 수익률 계산식 이상함 더 알아보기
+                
+            elif (percent >= self.PROFIT_BEGINNING_PERCENTAGE) and (percent < self.PROFIT_MIDDLE_PERCENTAGE):
+                # 첫번째 매도
+                sell_quantity = math.floor(quantity * self.SELL_BEGINNING_PERCENTAGE / 100)
+                self.trade_stock(sCode, sell_quantity, 2)
+                
+            elif (percent >= self.PROFIT_MIDDLE_PERCENTAGE) and (percent < self.PROFIT_END_PERCENTAGE):
+                # 두번째 매도
+                sell_quantity = math.floor(quantity * self.SELL_MIDDLE_PERCENTAGE / 100)
+                self.trade_stock(sCode, sell_quantity, 2)
+            
+            elif percent >= self.PROFIT_END_PERCENTAGE :
+                # 마지막(전량) 매도
+                self.trade_stock(sCode, quantity, 2)
+                
         # else:
         #     print(f"실시간데이터 들어옴: sCode: {sCode}, sRealType: {sRealType}")
                 
@@ -206,14 +217,24 @@ class Kiwoom(QAxWidget):
             
     def chejan_slot(self, sGubun, nItemCnt, sFidList):
         print(f"@@@@체결 데이터 들어옴@@@@ sGubun: {sGubun}, nItemCnt: {nItemCnt}, sFidList: {sFidList}")
-        
-        bought_sPrice = self.dynamicCall("GetChejanData(int)", 910)
-        bought_sCode = self.dynamicCall("GetChejanData(int)", 9001)
-        bought_sName = self.dynamicCall("GetChejanData(int)", 302)
-        bought_sQuantity = self.dynamicCall("GetChejanData(int)", 900)
-        
+        # sGubun 0: 접수,체결 / 1: 잔고변경
+        bought_sPrice = self.dynamicCall("GetChejanData()", 910)
+        bought_sCode = self.dynamicCall("GetChejanData()", 9001)
+        bought_sName = self.dynamicCall("GetChejanData()", 302)
+        bought_sQuantity = self.dynamicCall("GetChejanData()", 900)
         print(f"매입한 주식 정보\n 매입가: {bought_sPrice}, 종목코드: {bought_sCode}, 종목명: {bought_sName}, 구매수량: {bought_sQuantity}")
         
+        # 이곳에서 bought_stock_list 초기화 하기
+        self.BOUGHT_STOCK_LIST[bought_sCode].update({"보유수량" : bought_sQuantity})
+        self.BOUGHT_STOCK_LIST[bought_sCode].update({""})
+        
+        
+        
+        # 월요일 되면 할 것 정리
+        # chejan_slot에서 체결과 잔고으로 들어온 데이터 둘 다 종목코드(9001), 종목명(302)
+        # 조회시 잔고 내의 전체 데이터 조회가 가능한지, 아니면 하나의 데이터만 조회 가능한지 알아보기
+        # 그 후 bought_stock_list 딕셔너리에 값 새로 업데이트 하기
+        # real_data_slot() 의 종목프로그램매매 부분 조건별 매도식 quantity 부분 다시 만들어야함
 
 
     
@@ -230,9 +251,6 @@ class Kiwoom(QAxWidget):
         code_name = self.dynamicCall("GetMasterCodeName(String)", code)
         return code_name
     
-    # def buy_stock(self):
-    #     self.dynamicCall("SendOrder(String, String, String, Long, String, Long, Long, String, String)", ["주식구매", "2000", self.account_num, 1, i, 1, 0, "03", ""]) #(매수 또는 매도)
-    #     return "a"
     
     def trade_stock(self, code, quantity, trade):
         """주식 구매 및 판매
@@ -512,6 +530,9 @@ class Kiwoom(QAxWidget):
             print("self.BOUGHT_STOCK_LIST 값 확인 : \n%s " % self.BOUGHT_STOCK_LIST)
             self.trade_stock_loop.exit()
             
+    
+    def cal_stock(self, amount, now_price):
+        return now_price / amount
             
     
 
