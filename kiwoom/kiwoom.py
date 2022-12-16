@@ -72,10 +72,12 @@ class Kiwoom(QAxWidget):
         ## 메인 함수
         self.signal_login_commConnect()
         self.get_account_info()
-        self.mystock_value_now()
-        self.detail_account_info() # 예수금 가져오기
+        # self.mystock_value_now()
+        # self.detail_account_info() # 예수금 가져오기
         self.detail_account_mystock() # 계좌평가 잔고 내역 요청
         self.not_concluded_account() # 미체결 요청
+        
+        self.calculator_fnc() # 종목 분석용, 임시용으로 실행
         
         self.load_condition()
         self.search_condition()
@@ -127,7 +129,7 @@ class Kiwoom(QAxWidget):
             nNext (_type_): 연속조회 여부
         """
 
-        print("condition_search_slot 들어옴")
+        print("condition_search_slot()")
         # 리스트의 공백 문자열 제거
         codeList = codeList.split(";")
         self.codeList = list(filter(None, codeList))
@@ -135,17 +137,16 @@ class Kiwoom(QAxWidget):
         # 조건검색식으로 나온 결과 리스트 개별 결과로 재단
         for i in codeList:
             result = self.get_master_code_name(i)
-            print("조회 결과 주식 이름: %s" % result)
+            print("조건검색 결과: %s" % result)
             
         
         self.condition_search_loop.exit()
         
         
     def condition_load_slot(self, iRet, sMsg):
-        print("condition_load_slot:  %s" % sMsg) # 조건 검색식 불러오기 서버 응답 결과
+        print("condition_load_slot():  %s" % sMsg) # 조건 검색식 불러오기 서버 응답 결과
         ConditionNameList = self.dynamicCall("GetConditionNameList()").split(";")
-        ConditionNameList
-        print(f"조건식 확인: {ConditionNameList}")
+        # print(f"조건식 확인: {ConditionNameList}")
         
         self.condition_load_loop.exit()
         
@@ -158,7 +159,7 @@ class Kiwoom(QAxWidget):
             trCode (_type_): TR이름
             msg (_type_): 서버에서 전달하는 메시지
         """
-        print("stock_slot 메시지 확인: %s " % msg)
+        print("stock_slot() msg: %s " % msg)
         
     def real_data_slot(self, sCode, sRealType):
         
@@ -296,7 +297,7 @@ class Kiwoom(QAxWidget):
         
     
     def not_concluded_account(self, sPrevNext = "0"):
-        print("미체결 요청")
+        print("not_concluded_account()")
         self.dynamicCall("SetInputValue(QString, QString)", "계좌번호", self.account_num)
         self.dynamicCall("SetInputValue(QString, QString)", "체결번호", "1") 
         self.dynamicCall("SetInputValue(QString, QString)", "매매구분", "0")
@@ -332,7 +333,7 @@ class Kiwoom(QAxWidget):
     def search_condition(self) :
         """가져온 조건 검색식으로 검색 수행
         """
-        print("search_condition() 실행됨?")
+        print("search_condition()")
         mSearch = self.dynamicCall("SendCondition(String, String, int, int)", "0156", self.CONDITION_NAME, 9, 1) ## 조건식 이름, 인덱스 넣어서 바꿀 수 있게 수정하기
         if mSearch != 1:
             print("조건 검색 실패")
@@ -356,14 +357,14 @@ class Kiwoom(QAxWidget):
         self.trade_stock_loop.exec_()
         
     def regit_realTime_data(self):
-        print("테스트_값 : %s " % self.BOUGHT_STOCK_LIST.keys())
+        # print("테스트_값 : %s " % self.BOUGHT_STOCK_LIST.keys())
         self.Mcode_list = ""
         for i in self.BOUGHT_STOCK_LIST.keys():
             code = i + ';'
             self.Mcode_list += code
         
         # self.dynamicCall("CommKwRqData(String, String, int, int, String, String)", "종목코드", "연속조회여부", "조회종목개수", "0", "RQName", "화면번호")
-        print("코드 확인::: %s " % str(self.Mcode_list))
+        # print("코드 확인::: %s " % str(self.Mcode_list))
         self.dynamicCall("CommKwRqData(String, String, int, String, String, String)", [str(self.Mcode_list), "0", len(self.BOUGHT_STOCK_LIST.keys()), "0", "RQNAME", "9999"])
         self.regit_realTime_data_loop = QEventLoop()
         self.regit_realTime_data_loop.exec_()
@@ -385,7 +386,7 @@ class Kiwoom(QAxWidget):
         :param sPrevNext: 연속조회 유무를 판단하는 값 0: 연속(추가조회)데이터 없음, 2:연속(추가조회) 데이터 있음 (다음 페이지가 있는지)
         '''
         
-        print("수신된 trdata_slot RqName값 확인: %s" % sRQName)
+        print("trdata_slot() RqName: %s" % sRQName)
         
         if sRQName == "예수금상세현황요청":
             deposit = self.dynamicCall("GetCommData(String, String, int, String)", sTrCode, sRQName, 0, "예수금")
@@ -404,12 +405,12 @@ class Kiwoom(QAxWidget):
             total_buy_money = self.dynamicCall("GetCommData(String, String, int, String)", sTrCode, sRQName, 0, "총매입금액")
             total_buy_money_result = int(total_buy_money)
             
-            print("총매입금액 %s" % total_buy_money_result)
+            print("총매입금액: %s" % total_buy_money_result)
             
             total_profit_loss_rate = self.dynamicCall("GetCommData(String, String, int, String)", sTrCode, sRQName, 0, "총수익률(%)")
             total_profit_loss_rate_result = float(total_profit_loss_rate)
             
-            print("총수익률(%%) : %s" % total_profit_loss_rate_result)
+            print("총수익률(%%): %s" % total_profit_loss_rate_result)
             
             rows = self.dynamicCall("GetRepeatCnt(QString, QString)", sTrCode, sRQName)
             cnt = 0
@@ -449,7 +450,9 @@ class Kiwoom(QAxWidget):
 
                 cnt += 1
                 
-            print("계좌에 가지고 있는 종목 %s " % self.account_stock_dict)
+            print("계좌에 가지고 있는 종목:")
+            for i in self.account_stock_dict:
+                print(self.account_stock_dict[i])
             
             
             # 다음페이지 존재할 시 다음페이지까지 조회
@@ -510,7 +513,7 @@ class Kiwoom(QAxWidget):
         
         if sRQName == "구매주식정보조회":
             mystock_count = self.dynamicCall("GetRepeatCnt(String, String)", sTrCode, sRQName)
-            print("구매한 종목 개수 : %s" % mystock_count)
+            # print("구매한 종목 개수 : %s" % mystock_count)
             self.LIST_STOCKS_I_BOUGHT = dict() # 계좌 구매 주식 리스트 초기화
             
             for i in range(mystock_count):
@@ -527,14 +530,33 @@ class Kiwoom(QAxWidget):
                 
                 # print(f"{mystock_name} 수익률 : {mystock_percent}, 종목번호 확인 : {mystock_code}, 보유 수량 확인 : {mystock_quantity}")
                 
-            print("self.BOUGHT_STOCK_LIST 값 확인 : \n%s " % self.BOUGHT_STOCK_LIST)
+            print("self.BOUGHT_STOCK_LIST 값 확인 :")
+            for i in self.BOUGHT_STOCK_LIST:
+                print(self.BOUGHT_STOCK_LIST[i])
             self.trade_stock_loop.exit()
             
     
-    def cal_stock(self, amount, now_price):
-        return now_price / amount
+    def get_code_list_by_market(self, market_code):
+        """
+        종목 코드들 반환
+
+        Args:
+            market_code (_type_): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        code_list = self.dynamicCall("GetCodeListByMarket(QString)", market_code)
+        code_list = code_list.split(";")[:-1]
+        return code_list
             
     
+    def calculator_fnc(self):
+        """
+        종목 분석 실행용 함수
+        """
+        code_list = self.get_code_list_by_market("10")
+        print("코스닥 갯수 %s " % len(code_list))
 
     def day_kiwoom_db(self, code=None, date=None, sPrevNext="0"):
         self.dynamicCall("SetInputValue(QString, QString)", "종목코드", code)
