@@ -6,6 +6,7 @@ import time
 import datetime
 import math
 
+
 class Kiwoom(QAxWidget):
     def __init__(self):
         super().__init__()
@@ -73,10 +74,12 @@ class Kiwoom(QAxWidget):
         ## 메인 함수
         self.signal_login_commConnect()
         self.get_account_info()
-        self.mystock_value_now()
-        self.detail_account_info() # 예수금 가져오기
+        # self.mystock_value_now()
+        # self.detail_account_info() # 예수금 가져오기
         self.detail_account_mystock() # 계좌평가 잔고 내역 요청
         self.not_concluded_account() # 미체결 요청
+        
+        self.calculator_fnc() # 종목 분석용, 임시용으로 실행
         
         self.load_condition()
         self.search_condition()
@@ -276,6 +279,17 @@ class Kiwoom(QAxWidget):
         
         
         
+        # 이곳에서 bought_stock_list 초기화 하기
+        self.BOUGHT_STOCK_LIST[bought_sCode].update({"보유수량" : bought_sQuantity})
+        self.BOUGHT_STOCK_LIST[bought_sCode].update({""})
+        
+        
+        
+        # 월요일 되면 할 것 정리
+        # chejan_slot에서 체결과 잔고으로 들어온 데이터 둘 다 종목코드(9001), 종목명(302)
+        # 조회시 잔고 내의 전체 데이터 조회가 가능한지, 아니면 하나의 데이터만 조회 가능한지 알아보기
+        # 그 후 bought_stock_list 딕셔너리에 값 새로 업데이트 하기
+        # real_data_slot() 의 종목프로그램매매 부분 조건별 매도식 quantity 부분 다시 만들어야함
 
 
     
@@ -337,7 +351,7 @@ class Kiwoom(QAxWidget):
         
     
     def not_concluded_account(self, sPrevNext = "0"):
-        print("미체결 요청")
+        print("not_concluded_account()")
         self.dynamicCall("SetInputValue(QString, QString)", "계좌번호", self.account_num)
         self.dynamicCall("SetInputValue(QString, QString)", "체결번호", "1") 
         self.dynamicCall("SetInputValue(QString, QString)", "매매구분", "0")
@@ -442,12 +456,12 @@ class Kiwoom(QAxWidget):
             total_buy_money = self.dynamicCall("GetCommData(String, String, int, String)", sTrCode, sRQName, 0, "총매입금액")
             total_buy_money_result = int(total_buy_money)
             
-            print("총매입금액 %s" % total_buy_money_result)
+            print("총매입금액: %s" % total_buy_money_result)
             
             total_profit_loss_rate = self.dynamicCall("GetCommData(String, String, int, String)", sTrCode, sRQName, 0, "총수익률(%)")
             total_profit_loss_rate_result = float(total_profit_loss_rate)
             
-            print("총수익률(%%) : %s" % total_profit_loss_rate_result)
+            print("총수익률(%%): %s" % total_profit_loss_rate_result)
             
             rows = self.dynamicCall("GetRepeatCnt(QString, QString)", sTrCode, sRQName)
             cnt = 0
@@ -547,7 +561,7 @@ class Kiwoom(QAxWidget):
         
         if sRQName == "구매주식정보조회":
             mystock_count = self.dynamicCall("GetRepeatCnt(String, String)", sTrCode, sRQName)
-            print("구매한 종목 개수 : %s" % mystock_count)
+            # print("구매한 종목 개수 : %s" % mystock_count)
             self.LIST_STOCKS_I_BOUGHT = dict() # 계좌 구매 주식 리스트 초기화
             
             for i in range(mystock_count):
@@ -568,8 +582,28 @@ class Kiwoom(QAxWidget):
                 print(self.BOUGHT_STOCK_LIST[i])
             self.trade_stock_loop.exit()
             
+    
+    def get_code_list_by_market(self, market_code):
+        """
+        종목 코드들 반환
+
+        Args:
+            market_code (_type_): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        code_list = self.dynamicCall("GetCodeListByMarket(QString)", market_code)
+        code_list = code_list.split(";")[:-1]
+        return code_list
             
     
+    def calculator_fnc(self):
+        """
+        종목 분석 실행용 함수
+        """
+        code_list = self.get_code_list_by_market("10")
+        print("코스닥 갯수 %s " % len(code_list))
 
     def day_kiwoom_db(self, code=None, date=None, sPrevNext="0"):
         self.dynamicCall("SetInputValue(QString, QString)", "종목코드", code)
