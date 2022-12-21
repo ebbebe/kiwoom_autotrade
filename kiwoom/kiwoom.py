@@ -46,7 +46,6 @@ class Kiwoom(QAxWidget):
         self.SELL_MIDDLE_PERCENTAGE = 30 # 두번째 매도시 몇퍼센트 매도할 것인지
         
         
-        self.idx = 0
         self.CONDITION_NAME = "1분봉단타"
         
         self.BOUGHT_STOCK_LIST = dict() # 보유 주식 리스트
@@ -85,7 +84,9 @@ class Kiwoom(QAxWidget):
         self.search_condition()
         
         self.check_stock()
-        self.regit_realTime_data()
+        # self.regit_realTime_data()
+        
+        self.regit_realReg()
         
         
 
@@ -168,53 +169,64 @@ class Kiwoom(QAxWidget):
         print(f"stock_slot() msg: {msg}" )
         
     def real_data_slot(self, sCode, sRealType):
+        # print(f"sCode: {sCode}, sRealType = {sRealType}")
+        
+        if sRealType == "주식체결":
+            # 주식이 체결 됐을 때 실행
+            
+            
+            try:
+                now_price = abs(float(self.dynamicCall("GetCommRealData(String, int)", sCode, 10)))
+                quantity = float(self.BOUGHT_STOCK_LIST[sCode]['보유수량'])
+                bought_price = float(self.BOUGHT_STOCK_LIST[sCode]['매입가'])
+                percent = round(((now_price - bought_price) / bought_price) * 100, 2)
+
+                self.BOUGHT_STOCK_LIST[sCode].update({"수익률" : percent})
+                print("계산된 퍼센트: %s " % percent)
+                print(self.BOUGHT_STOCK_LIST[sCode])
+                
+                if percent <= self.LOSS_BASED_PERCENTAGE:
+                    #손실나서 전량 매도
+                    self.trade_stock(sCode, quantity, self.SELL)
+                    print("손절(전량매도)")
+                    
+                elif (percent >= self.PROFIT_BEGINNING_PERCENTAGE) and (percent < self.PROFIT_MIDDLE_PERCENTAGE):
+                    # 첫번째 매도
+                    sell_quantity = math.floor(quantity * self.SELL_BEGINNING_PERCENTAGE / 100)
+                    if sell_quantity == 0:
+                        sell_quantity = 1
+                    self.trade_stock(sCode, sell_quantity, self.SELL)
+                    print("첫번째 매도")
+                    print(f"sell_quantity: {sell_quantity}")
+                    
+                elif (percent >= self.PROFIT_MIDDLE_PERCENTAGE) and (percent < self.PROFIT_END_PERCENTAGE):
+                    # 두번째 매도
+                    sell_quantity = math.floor(quantity * self.SELL_MIDDLE_PERCENTAGE / 100)
+                    if sell_quantity == 0:
+                        sell_quantity = 1
+                    self.trade_stock(sCode, sell_quantity, self.SELL)
+                    print("두번째 매도")
+                    print(f"sell_quantity: {sell_quantity}")
+                
+                elif percent >= self.PROFIT_END_PERCENTAGE :
+                    # 마지막(전량) 매도
+                    self.trade_stock(sCode, quantity, self.SELL)
+                    print("마지막(전량) 매도")
+                    print(f"sell_quantity: {quantity}")
+            except:
+                pass
+                
+            
         
         if sRealType == "종목프로그램매매":
-            #현재 보유 하고 있는 주식을 실시간 데이터에 등록해 판매하기 위해 대기중
-            
-            
-            now_price = abs(float(self.dynamicCall("GetCommRealData(String, int)", sCode, 10)))
-            self.idx += 1
-            # print(f"종목프로그램매매 : 종목명: {self.BOUGHT_STOCK_LIST[sCode]['종목명']}, 종목코드: {sCode} 현재가: {abs(int(now_price))}, {self.idx} 번째 ")
-            
-            # 수익률 계산
-            quantity = self.BOUGHT_STOCK_LIST[sCode]['보유수량']
-            bought_price = float(self.BOUGHT_STOCK_LIST[sCode]['매입가'])
-            percent = round(((now_price - bought_price) / bought_price) * 100, 2)
+            pass
+                
 
-            print("@@@@@@@@@@@@@@@@@팔림??@@@@@@@@@@@@@@@@@@@@@@")
-            print(self.BOUGHT_STOCK_LIST[sCode])
-            
-            
-            if percent <= self.LOSS_BASED_PERCENTAGE:
-                #손실나서 전량 매도
-                self.trade_stock(sCode, quantity, self.SELL)
-                print("손절(전량매도)")
-                
-            elif (percent >= self.PROFIT_BEGINNING_PERCENTAGE) and (percent < self.PROFIT_MIDDLE_PERCENTAGE):
-                # 첫번째 매도
-                sell_quantity = math.floor(quantity * self.SELL_BEGINNING_PERCENTAGE / 100)
-                self.trade_stock(sCode, sell_quantity, self.SELL)
-                print("첫번째 매도")
-                print(f"sell_quantity: {sell_quantity}")
-                
-            elif (percent >= self.PROFIT_MIDDLE_PERCENTAGE) and (percent < self.PROFIT_END_PERCENTAGE):
-                # 두번째 매도
-                print("두번째 매도")
-                sell_quantity = math.floor(quantity * self.SELL_MIDDLE_PERCENTAGE / 100)
-                print(f"sell_quantity: {sell_quantity}")
-                self.trade_stock(sCode, sell_quantity, self.SELL)
-            
-            elif percent >= self.PROFIT_END_PERCENTAGE :
-                # 마지막(전량) 매도
-                print("마지막(전량) 매도")
-                print(f"sell_quantity: {sell_quantity}")
-                self.trade_stock(sCode, quantity, self.SELL)
-                
             
             
             
-        self.regit_realTime_data_loop.exit()
+            
+        # self.regit_realTime_data_loop.exit()
         
     
     def real_condition_slot(self, sCode, sType, sConditionName, sConditionIndex):
@@ -260,28 +272,32 @@ class Kiwoom(QAxWidget):
             
             print(f"잔고변경:\n 종목명: {sName}, 수익률: {profit_percent}, 보유수량: {sQuantity}, 매입가: {bought_sPrice}, 체결구분: {sell_buy}")
             
+            
             # bought_stock_list 업데이트
-            if sell_buy == "매도" and sQuantity == "0":
-                del self.BOUGHT_STOCK_LIST[sCode]   
-                self.dynamicCall("SetRealRemove(String, String)", "ALL", sCode) #전량매도시 실시간등록 해제
-                print(f"BOUGHT_STOCK_LIST에서 {sName} 삭제")
-                    
-            elif sell_buy == "매수":
+            
+            if sCode in self.BOUGHT_STOCK_LIST:
+                print("요소 있음")
                 self.BOUGHT_STOCK_LIST[sCode].update({"종목명" : sName})
                 self.BOUGHT_STOCK_LIST[sCode].update({"수익률" : profit_percent})
                 self.BOUGHT_STOCK_LIST[sCode].update({"보유수량" : sQuantity})
                 self.BOUGHT_STOCK_LIST[sCode].update({"매입가" : total_bought_sPrice})
-            
+            else:
+                print("요소 없음")
+                mystock_info = {"종목명" : sName, "수익률" : profit_percent, "보유수량" : sQuantity, "매입가" : total_bought_sPrice}
+                self.BOUGHT_STOCK_LIST[sCode] = mystock_info
+                
+            if sell_buy == "매도" and sQuantity == "0":
+                del self.BOUGHT_STOCK_LIST[sCode]
+                self.dynamicCall("SetRealRemove(String, String)", "ALL", sCode) #전량매도시 실시간등록 해제
+                print(f"BOUGHT_STOCK_LIST에서 {sName} 삭제")
+
+
+                
             
             print("BOUGHT_STOCK_LIST UPDATE:")
             for i in self.BOUGHT_STOCK_LIST:
                 print(self.BOUGHT_STOCK_LIST[i])
-        
-        
-        
-        # 이곳에서 bought_stock_list 초기화 하기
-        self.BOUGHT_STOCK_LIST[bought_sCode].update({"보유수량" : bought_sQuantity})
-        self.BOUGHT_STOCK_LIST[bought_sCode].update({""})
+                
         
         
         
@@ -417,6 +433,7 @@ class Kiwoom(QAxWidget):
             self.Mcode_list += code
         
         self.dynamicCall("CommKwRqData(String, String, int, String, String, String)", [str(self.Mcode_list), "0", len(self.BOUGHT_STOCK_LIST.keys()), "0", "RQNAME", "9999"])
+        
         self.regit_realTime_data_loop = QEventLoop()
         self.regit_realTime_data_loop.exec_()
         
@@ -424,7 +441,9 @@ class Kiwoom(QAxWidget):
          
     def regit_realReg(self):
         print("regit_realReg()")
-        self.dynamicCall("SetRealReg(String, String, String, String)", "9998", self.Mcode_list, "10", )
+        for i in self.BOUGHT_STOCK_LIST:
+            print(f"{i} 종목 실시간 등록")
+            self.dynamicCall("SetRealReg(String, String, String, String)", "9001", i, "10", "1")
         
 
     def trdata_slot(self, sScrNo, sRQName, sTrCode, sRecordName, sPrevNext):
@@ -619,8 +638,9 @@ class Kiwoom(QAxWidget):
     
     
     # 21일 수요일 할 것 정리
-    # real_data_slot 의 sell_quantity 값 확인하기 ([RC4099] 모의투자 주문수량(0)을 확인하세요.)
-    #  ?? 팔림?? 들어왔는데 왜 안팔리는지, 왜 들어왔는지 확인하기
     # 처음 전체 보유수에서 판매 해야하는데 현재 전체 보유수에서 판매하는것 고치기
     # 매수 금액 일정하게 맞추는 기능 구현
-    
+    # 시간마다 slack 통해 알람
+    # 매일 5시마다 점검이기 때문에 버전처리 및 끊긴 로그인 다시 시도 기능
+    # 과거 장 데이터와 조건검색 판매 조건까지 설정해서 비교 가능한지 알아보기
+
