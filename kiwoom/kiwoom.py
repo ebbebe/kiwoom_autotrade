@@ -1,5 +1,6 @@
 from PyQt5.QAxContainer import *
 from PyQt5.QtCore import *
+from PyQt5.QtTest import *
 from config_.errorCode import *
 import schedule
 import time
@@ -23,6 +24,7 @@ class Kiwoom(QAxWidget):
         self.regit_realTime_data_loop = None
         self.get_purchase_price_loop = None
         self.get_stocks_track_loop = None
+        self.calculator_event_loop = QEventLoop()
         ##########################
         
         ####### 스크린번호 모음
@@ -78,7 +80,7 @@ class Kiwoom(QAxWidget):
         self.detail_account_mystock() # 계좌평가 잔고 내역 요청
         self.not_concluded_account() # 미체결 요청
         
-        self.calculator_fnc() # 종목 분석용, 임시용으로 실행
+        # self.calculator_fnc() # 종목 분석용, 임시용으로 실행
         
         self.load_condition()
         self.search_condition()
@@ -182,13 +184,13 @@ class Kiwoom(QAxWidget):
                 percent = round(((now_price - bought_price) / bought_price) * 100, 2)
 
                 self.BOUGHT_STOCK_LIST[sCode].update({"수익률" : percent})
-                print("계산된 퍼센트: %s " % percent)
-                print(self.BOUGHT_STOCK_LIST[sCode])
+                print(f"{self.BOUGHT_STOCK_LIST[sCode]['종목명']}: {percent}% ")
+                # print(self.BOUGHT_STOCK_LIST[sCode])
                 
                 if percent <= self.LOSS_BASED_PERCENTAGE:
                     #손실나서 전량 매도
                     self.trade_stock(sCode, quantity, self.SELL)
-                    print("손절(전량매도)")
+                    print(f"{self.BOUGHT_STOCK_LIST[sCode]['종목명']} 손절(전량매도)")
                     
                 elif (percent >= self.PROFIT_BEGINNING_PERCENTAGE) and (percent < self.PROFIT_MIDDLE_PERCENTAGE):
                     # 첫번째 매도
@@ -232,7 +234,11 @@ class Kiwoom(QAxWidget):
     def real_condition_slot(self, sCode, sType, sConditionName, sConditionIndex):
         print(f"real_condition(): {sCode}, {sType}, {sConditionName}, {sConditionIndex}" )
         if sType == "I": #종목편입
-            self.trade_stock(sCode, 1, self.BUY)
+            current_price = self.dynamicCall("GetCommData(QString, QString, int, QString", sCode, "매수", 0, "현재가")
+            hoga_unit = self.cal_hoga(current_price) # 최소 호가 단위 계산
+            purchase_quantity = self.BUY_STANDARD_AMOUNT / (current_price + hoga_unit) # 지정금액 근사치 해당하는 주식 매수수량 계산
+            
+            self.trade_stock(sCode, purchase_quantity, self.BUY) # 매수 주문
             self.dynamicCall("SetRealReg(String, String, String, String)", "9001", sCode, "10", 1)
             print("조건검색 종목편입: %s " %sCode)
         elif sType == "D": #종목이탈
@@ -301,11 +307,7 @@ class Kiwoom(QAxWidget):
         
         
         
-        # 월요일 되면 할 것 정리
-        # chejan_slot에서 체결과 잔고으로 들어온 데이터 둘 다 종목코드(9001), 종목명(302)
-        # 조회시 잔고 내의 전체 데이터 조회가 가능한지, 아니면 하나의 데이터만 조회 가능한지 알아보기
-        # 그 후 bought_stock_list 딕셔너리에 값 새로 업데이트 하기
-        # real_data_slot() 의 종목프로그램매매 부분 조건별 매도식 quantity 부분 다시 만들어야함
+
 
 
     
@@ -572,6 +574,21 @@ class Kiwoom(QAxWidget):
                 print("미체결 종목 : %s " % self.not_account_stock_dict[order_no])
                 
             self.detail_account_info_event_loop.exit()
+        
+        if sRQName == "주식일봉차트조회":
+            code = self.dynamicCall("GetCommData(QString, QString, int, QString)", sTrCode, sRQName, 0, "종목코드")
+            code = code.strip()
+            print(f"{code} 일봉데이터 요청")
+            
+            
+            rows = self.dynamicCall("GetRepeatCnt(QString, QString)", sTrCode, sRQName)
+            print(rows)
+            
+            if sPrevNext == "2":
+                self.day_kiwoom_db(code=code, sPrevNext=sPrevNext)
+            else:
+                self.calculator_event_loop.exit()
+            
             
         if sRQName == "계좌평가현황요청":
             mystock = self.dynamicCall("GetCommData(String, String, int, String)", sTrCode, sRQName, 0, "총매입금액")
@@ -600,7 +617,45 @@ class Kiwoom(QAxWidget):
             for i in self.BOUGHT_STOCK_LIST:
                 print(self.BOUGHT_STOCK_LIST[i])
             self.trade_stock_loop.exit()
+    
+    def cal_hoga(self, price):
+        hoga_unit = 0
+        
+        if price < 1000:
+            hoga_unit = 1
+        elif price >= 1000 and price <= 5000:
+             hoga_unit = 5
+        elif price > 5000 and price <= 10000:
+            hoga_unit = 10
+        elif price > 10000 and price <= 50000:
+            hoga_unit = 50
+        elif price > 50000 and price <= 100000:
+            hoga_unit = 100
+        elif price > 100000 and price <= 500000:
+            hoga_unit = 500
+        elif price > 500000:
+            hoga_unit = 1000
+        # 1월달 개편될 시 아래 코드로 교체할 것
+        # if price < 1000:
+        #     hoga_unit = 1
+        # elif price < 2000:
+        #      hoga_unit = 1
+        # elif price >= 2000 and price <= 5000:
+        #     hoga_unit = 5
+        # elif price > 5000 and price <= 20000:
+        #     hoga_unit = 10
+        # elif price > 20000 and price <= 50000:
+        #     hoga_unit = 50
+        # elif price > 50000 and price <= 200000:
+        #     hoga_unit = 100
+        # elif price > 200000 and price <= 500000:
+        #     hoga_unit = 500
+        # elif price > 500000:
+        #     hoga_unit = 1000
             
+            
+        return hoga_unit
+
     
     def get_code_list_by_market(self, market_code):
         """
@@ -623,8 +678,19 @@ class Kiwoom(QAxWidget):
         """
         code_list = self.get_code_list_by_market("10")
         print("코스닥 갯수 %s " % len(code_list))
+        
+        for idx, code in enumerate(code_list):
+            
+            self.dynamicCall("DisconnectRealData(QString)", self.screen_calculation_stock)
+            
+            print(f"{idx+1} / {len(code_list)} / KOSDAQ Stock Code : {code} is updating.. ")
+            
+            self.day_kiwoom_db(code=code)
 
     def day_kiwoom_db(self, code=None, date=None, sPrevNext="0"):
+        
+        QTest.qWait(3600)
+        
         self.dynamicCall("SetInputValue(QString, QString)", "종목코드", code)
         self.dynamicCall("SetInputValue(QString, QString)", "수정주가구분", "1")
         
@@ -632,15 +698,24 @@ class Kiwoom(QAxWidget):
             self.dynamicCall("SetInputValue(QString, QString)", "기준일자", date)
             
         self.dynamicCall("CommRqData(QString, QString, int, QString)", "주식일봉차트조회", "opt10081", sPrevNext, self.screen_calculation_stock)
+        
+        self.calculator_event_loop.exec_()
             
             
     
     
     
-    # 21일 수요일 할 것 정리
+    # 21일 금요일 할 것 정리
+    # 매수 금액 일정하게 맞추는 기능 테스트 (real_condition_slot
+
+    
+    
+    
+    # 우선도 낮은 것
+    # 1월 1일부터 호가 최소 단위 개편되어 다시 수정해야함
     # 처음 전체 보유수에서 판매 해야하는데 현재 전체 보유수에서 판매하는것 고치기
-    # 매수 금액 일정하게 맞추는 기능 구현
     # 시간마다 slack 통해 알람
     # 매일 5시마다 점검이기 때문에 버전처리 및 끊긴 로그인 다시 시도 기능
     # 과거 장 데이터와 조건검색 판매 조건까지 설정해서 비교 가능한지 알아보기
-
+    # 서버에 올려서 24시간 돌아가게 만들기
+    
