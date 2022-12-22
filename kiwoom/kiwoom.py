@@ -6,7 +6,8 @@ import schedule
 import time
 import datetime
 import math
-
+import pandas as pd
+import csv
 
 class Kiwoom(QAxWidget):
     def __init__(self):
@@ -25,6 +26,8 @@ class Kiwoom(QAxWidget):
         self.get_purchase_price_loop = None
         self.get_stocks_track_loop = None
         self.calculator_event_loop = QEventLoop()
+        self.tick_data_loop = QEventLoop()
+        
         ##########################
         
         ####### 스크린번호 모음
@@ -78,10 +81,10 @@ class Kiwoom(QAxWidget):
         # self.mystock_value_now()
         # self.detail_account_info() # 예수금 가져오기
         self.detail_account_mystock() # 계좌평가 잔고 내역 요청
-        self.not_concluded_account() # 미체결 요청
+        # self.not_concluded_account() # 미체결 요청
+        self.get_tick_data() # 현재 안됨
         
         # self.calculator_fnc() # 종목 분석용, 임시용으로 실행
-        
         self.load_condition()
         self.search_condition()
         
@@ -144,9 +147,8 @@ class Kiwoom(QAxWidget):
         # 조건검색식으로 나온 주식명 출력
         for i in codeList:
             result = self.get_master_code_name(i)
-            if result != "":
-                pass
-            print("조건검색: %s" % result)
+            if result:
+                print("조건검색: %s" % result)
             
         
         self.condition_search_loop.exit()
@@ -170,12 +172,12 @@ class Kiwoom(QAxWidget):
         """
         print(f"stock_slot() msg: {msg}" )
         
-    def real_data_slot(self, sCode, sRealType):
+    def real_data_slot(self, sCode, sRealType): 
+        # 실시간 데이터
+        print("실시간 데이터 체크")
         # print(f"sCode: {sCode}, sRealType = {sRealType}")
-        
         if sRealType == "주식체결":
-            # 주식이 체결 됐을 때 실행
-            
+            # 주식 체결 됐을 때 실행
             
             try:
                 now_price = abs(float(self.dynamicCall("GetCommRealData(String, int)", sCode, 10)))
@@ -602,8 +604,8 @@ class Kiwoom(QAxWidget):
             
             for i in range(mystock_count):
                 # print("strCode 확인: ++ %s" % sTrCode)
-                mystock_name = str(self.dynamicCall("GetCommData(String, String, int, String)", sTrCode, sRQName, i, "종목명")).strip()
-                mystock_code = str(self.dynamicCall("GetCommData(String, String, int, String)", sTrCode, sRQName, i, "종목번호")[1:]).strip()
+                mystock_name = self.dynamicCall("GetCommData(String, String, int, String)", sTrCode, sRQName, i, "종목명").strip()
+                mystock_code = self.dynamicCall("GetCommData(String, String, int, String)", sTrCode, sRQName, i, "종목번호")[1:].strip()
                 mystock_percent = float(self.dynamicCall("GetCommData(String, String, int, String)", sTrCode, sRQName, i, "수익률(%)"))
                 mystock_quantity = int(self.dynamicCall("GetCommData(String, String, int, String)", sTrCode, sRQName, i, "보유수량"))
                 mystock_bought_price = int(self.dynamicCall("GetCommData(String, String, int, String)", sTrCode, sRQName, i, "매입가"))
@@ -617,6 +619,54 @@ class Kiwoom(QAxWidget):
             for i in self.BOUGHT_STOCK_LIST:
                 print(self.BOUGHT_STOCK_LIST[i])
             self.trade_stock_loop.exit()
+            
+        if sRQName == "주식틱차트조회요청":
+            
+
+            rows = self.dynamicCall("GetRepeatCnt(QString, QString)", sTrCode, sRQName)
+            # print(rows)
+            
+            # print(f"체결시간: {result}, 현재가: {price}, 거래량: {trade_qunatity}, 시가: {now_price}, 고가: {high_price}, 저가: {low_price}")
+            # print(f"sPrevNext: {sPrevNext}")
+
+            sample_dict = []
+            
+            for i in range(rows): # rows
+                result = self.dynamicCall("GetCommData(QString, QString, int, QString)", sTrCode, sRQName, i, "체결시간").strip()
+                price = self.dynamicCall("GetCommData(QString, QString, int, QString)", sTrCode, sRQName, i, "현재가").strip()
+                trade_qunatity = self.dynamicCall("GetCommData(QString, QString, int, QString)", sTrCode, sRQName, i, "거래량").strip()
+                now_price = self.dynamicCall("GetCommData(QString, QString, int, QString)", sTrCode, sRQName, i, "시가").strip()
+                high_price = self.dynamicCall("GetCommData(QString, QString, int, QString)", sTrCode, sRQName, i, "고가").strip()
+                low_price = self.dynamicCall("GetCommData(QString, QString, int, QString)", sTrCode, sRQName, i, "저가").strip()
+                
+                str = {"체결시간" : result, "현재가" : price, "거래량" : trade_qunatity, "시가" : now_price, "고가" : high_price, "저가" : low_price}
+                sample_dict.append(str)
+                
+
+            
+
+            
+            col_name=["체결시간","현재가","거래량","시가","고가","저가"]
+            with open("trades.csv", 'w', newline="") as csvFile:
+                wr = csv.DictWriter(csvFile, fieldnames=col_name)
+                wr.writeheader()
+                for ele in sample_dict:
+                    wr.writerow(ele)
+
+
+            
+            
+            print(f"{rows}")
+            
+            self.tick_data_loop.exit()
+            # if sPrevNext == "2":
+            #     self.get_tick_data()
+            # else:
+            #     self.tick_data_loop.exit()
+            
+
+            
+
     
     def cal_hoga(self, price):
         hoga_unit = 0
@@ -703,19 +753,36 @@ class Kiwoom(QAxWidget):
             
             
     
+    def get_tick_data(self):
+        
+        QTest.qWait(3600)
+        
+        
+        self.dynamicCall("SetInputValue(QString, QString)", "종목코드", "039490")
+        self.dynamicCall("SetInputValue(QString, QString)", "틱범위", "1")
+        self.dynamicCall("SetInputValue(QString, QString)", "수정주가구분", "1")
+        
+        
+        self.dynamicCall("CommRqData(QString, QString, int, QString)", "주식틱차트조회요청", "opt10079", 0, "7777")
+        
+        self.tick_data_loop.exec_()
+    # 22일(금요일) 할 것 정리
+    # 매수 금액 일정하게 맞추는 기능 테스트 (real_condition_slot)
+    # 백테스팅 기능 만들기:
+    # 1.조건 검색식에 들어온 종목 opt10079(틱차트조회) 로 조건 검색식에 조회 되기 전, 후 데이터 가져와 엑셀로 저장하기
+    # 2.backTest.py 클래스로 만들고 테스트 가능하게 만들기
     
-    
-    # 21일 금요일 할 것 정리
-    # 매수 금액 일정하게 맞추는 기능 테스트 (real_condition_slot
-
-    
+    # 트레이딩시 기록 남기기
     
     
     # 우선도 낮은 것
-    # 1월 1일부터 호가 최소 단위 개편되어 다시 수정해야함
+    
     # 처음 전체 보유수에서 판매 해야하는데 현재 전체 보유수에서 판매하는것 고치기
     # 시간마다 slack 통해 알람
     # 매일 5시마다 점검이기 때문에 버전처리 및 끊긴 로그인 다시 시도 기능
     # 과거 장 데이터와 조건검색 판매 조건까지 설정해서 비교 가능한지 알아보기
     # 서버에 올려서 24시간 돌아가게 만들기
+    
+    # 알아두어야 할 것
+    # 1월 1일부터 호가 최소 단위 개편되어 다시 수정해야함
     
