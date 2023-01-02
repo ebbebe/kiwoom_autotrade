@@ -84,7 +84,6 @@ class Kiwoom(QAxWidget):
         self.detail_account_mystock() # 계좌평가 잔고 내역 요청
         # self.not_concluded_account() # 미체결 요청
         # self.get_tick_data() # 현재 안됨
-        
         # self.calculator_fnc() # 종목 분석용, 임시용으로 실행
         self.load_condition()
         self.search_condition()
