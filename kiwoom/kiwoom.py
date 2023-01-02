@@ -27,6 +27,7 @@ class Kiwoom(QAxWidget):
         self.get_stocks_track_loop = None
         self.calculator_event_loop = QEventLoop()
         self.tick_data_loop = QEventLoop()
+        self.stock_price_loop = QEventLoop()
         
         ##########################
         
@@ -40,7 +41,7 @@ class Kiwoom(QAxWidget):
         self.password = "1234" # 비밀번호
         self.BUY = 1 # 신규매수
         self.SELL = 2 # 신규매도
-        
+        self.puchase_quantity = 0
         
         self.BUY_STANDARD_AMOUNT = 500000 # 매수 비중
         self.LOSS_BASED_PERCENTAGE = -2 # 손절시 전량 매도 퍼센트 기준
@@ -82,7 +83,7 @@ class Kiwoom(QAxWidget):
         # self.detail_account_info() # 예수금 가져오기
         self.detail_account_mystock() # 계좌평가 잔고 내역 요청
         # self.not_concluded_account() # 미체결 요청
-        self.get_tick_data() # 현재 안됨
+        # self.get_tick_data() # 현재 안됨
         
         # self.calculator_fnc() # 종목 분석용, 임시용으로 실행
         self.load_condition()
@@ -90,7 +91,7 @@ class Kiwoom(QAxWidget):
         
         self.check_stock()
         # self.regit_realTime_data()
-        
+        # self.get_stock_price("446070")
         self.regit_realReg()
         
         
@@ -174,8 +175,8 @@ class Kiwoom(QAxWidget):
         
     def real_data_slot(self, sCode, sRealType): 
         # 실시간 데이터
-        print("실시간 데이터 체크")
-        # print(f"sCode: {sCode}, sRealType = {sRealType}")
+        
+        print(f"sCode: {sCode}, sRealType = {sRealType}")
         if sRealType == "주식체결":
             # 주식 체결 됐을 때 실행
             
@@ -234,17 +235,20 @@ class Kiwoom(QAxWidget):
         
     
     def real_condition_slot(self, sCode, sType, sConditionName, sConditionIndex):
+        #실시간 조건검색
+        
         print(f"real_condition(): {sCode}, {sType}, {sConditionName}, {sConditionIndex}" )
         if sType == "I": #종목편입
-            current_price = self.dynamicCall("GetCommData(QString, QString, int, QString", sCode, "매수", 0, "현재가")
-            hoga_unit = self.cal_hoga(current_price) # 최소 호가 단위 계산
-            purchase_quantity = self.BUY_STANDARD_AMOUNT / (current_price + hoga_unit) # 지정금액 근사치 해당하는 주식 매수수량 계산
-            
-            self.trade_stock(sCode, purchase_quantity, self.BUY) # 매수 주문
+            self.get_stock_price(sCode)
+            # current_price = int(self.dynamicCall("GetCommData(QString, QString, int, QString", sCode, "매수", 0, "현재가"))
+            # hoga_unit = self.cal_hoga(current_price) # 최소 호가 단위 계산
+            # purchase_quantity = self.BUY_STANDARD_AMOUNT / (current_price + hoga_unit) # 지정금액 근사치 해당하는 주식 매수수량 계산
+            # print(f"self.puchase_quantity: {self.puchase_quantity}")
+            print(f"종목편입돼서 사려함, 구매수량은: {self.purchase_quantity}")
+            self.trade_stock(sCode, self.purchase_quantity, self.BUY) # 매수 주문
             self.dynamicCall("SetRealReg(String, String, String, String)", "9001", sCode, "10", 1)
             print("조건검색 종목편입: %s " %sCode)
         elif sType == "D": #종목이탈
-            # self.dynamicCall("SetRealRemove(String, String)", "ALL", sCode)
             print("조건검색 종목이탈: %s " %sCode)
         
             
@@ -260,7 +264,7 @@ class Kiwoom(QAxWidget):
             bought_sCode = self.dynamicCall("GetChejanData(int)", 9001).strip()[1:]
             bought_sName = self.dynamicCall("GetChejanData(int)", 302).strip()
             bought_sQuantity = self.dynamicCall("GetChejanData(int)", 900).strip()
-            print(f"접수및체결:\n매입가: {bought_sPrice}, 종목코드: {bought_sCode}, 종목명: {bought_sName}, 주문수량: {bought_sQuantity}")
+            # print(f"접수및체결:\n매입가: {bought_sPrice}, 종목코드: {bought_sCode}, 종목명: {bought_sName}, 주문수량: {bought_sQuantity}")
         elif sGubun == "1":
             # 잔고변경 
             sQuantity = self.dynamicCall("GetChejanData(int)", 930).strip()
@@ -664,6 +668,21 @@ class Kiwoom(QAxWidget):
             # else:
             #     self.tick_data_loop.exit()
             
+            
+        if sRQName == "주식현재가조회요청":
+            
+            
+            print("주식현재가조회요청 실행됨@@@")
+            # low_price = self.dynamicCall("GetCommData(QString, QString, int, QString)", sTrCode, sRQName, i, "저가").strip()
+            
+            current_price = int(self.dynamicCall("GetCommData(QString, QString, int, QString", sTrCode, "매수", 0, "현재가"))
+            hoga_unit = self.cal_hoga(current_price) # 최소 호가 단위 계산
+            self.purchase_quantity = int(self.BUY_STANDARD_AMOUNT / (current_price + hoga_unit)) # 지정금액 근사치 해당하는 주식 매수수량 계산
+            print(f"self.purchase_quantity:  {self.purchase_quantity}")
+            self.stock_price_loop.exit()
+            
+            
+            
 
             
 
@@ -766,6 +785,17 @@ class Kiwoom(QAxWidget):
         self.dynamicCall("CommRqData(QString, QString, int, QString)", "주식틱차트조회요청", "opt10079", 0, "7777")
         
         self.tick_data_loop.exec_()
+        
+        
+    def get_stock_price(self, sCode):
+        print("get_stock_price 실행됨")
+        print(f"sCode: {sCode}")
+        self.dynamicCall("SetInputValue(QString, QString)", "종목코드", sCode)
+        self.dynamicCall("CommRqData(QString, QString, int, QString)", "주식현재가조회요청", "opt10001", 0, "7776")
+        
+        
+        self.stock_price_loop.exec()
+        
     # 22일(금요일) 할 것 정리
     # 매수 금액 일정하게 맞추는 기능 테스트 (real_condition_slot)
     # 백테스팅 기능 만들기:
