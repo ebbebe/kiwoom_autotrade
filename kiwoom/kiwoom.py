@@ -44,7 +44,7 @@ class Kiwoom(QAxWidget):
         self.puchase_quantity = 0
         
         self.BUY_STANDARD_AMOUNT = 500000 # 매수 비중
-        self.LOSS_BASED_PERCENTAGE = -2 # 손절시 전량 매도 퍼센트 기준
+        self.LOSS_BASED_PERCENTAGE = -3 # 손절시 전량 매도 퍼센트 기준
         self.PROFIT_BEGINNING_PERCENTAGE = 3 # 몇퍼센트 올랐을 때 매도 할 것인지 첫번째 기준
         self.PROFIT_MIDDLE_PERCENTAGE = 7 # 두번째 기준
         self.PROFIT_END_PERCENTAGE = 10 # 세번째 기준
@@ -52,7 +52,8 @@ class Kiwoom(QAxWidget):
         self.SELL_MIDDLE_PERCENTAGE = 30 # 두번째 매도시 몇퍼센트 매도할 것인지
         
         
-        self.CONDITION_NAME = "1분봉단타"
+        self.CONDITION_NAME = "8프로이상기준봉돌파"
+        self.CONDITION_INDEX = 12
         
         self.BOUGHT_STOCK_LIST = dict() # 보유 주식 리스트
         self.account_stock_dict = {} # 영상 강의 학습용 딕셔너리
@@ -177,7 +178,7 @@ class Kiwoom(QAxWidget):
         
         print(f"sCode: {sCode}, sRealType = {sRealType}")
         if sRealType == "주식체결":
-            # 주식 체결 됐을 때 실행
+            # 추적중인 주식 체결 됐을 때 실행
             
             try:
                 now_price = abs(float(self.dynamicCall("GetCommRealData(String, int)", sCode, 10)))
@@ -187,12 +188,19 @@ class Kiwoom(QAxWidget):
 
                 self.BOUGHT_STOCK_LIST[sCode].update({"수익률" : percent})
                 print(f"{self.BOUGHT_STOCK_LIST[sCode]['종목명']}: {percent}% ")
+                
+                
                 # print(self.BOUGHT_STOCK_LIST[sCode])
                 
+                
+                
+                                
                 if percent <= self.LOSS_BASED_PERCENTAGE:
                     #손실나서 전량 매도
                     self.trade_stock(sCode, quantity, self.SELL)
+                    
                     print(f"{self.BOUGHT_STOCK_LIST[sCode]['종목명']} 손절(전량매도)")
+                    
                     
                 elif (percent >= self.PROFIT_BEGINNING_PERCENTAGE) and (percent < self.PROFIT_MIDDLE_PERCENTAGE):
                     # 첫번째 매도
@@ -411,7 +419,7 @@ class Kiwoom(QAxWidget):
         """가져온 조건 검색식으로 검색 수행
         """
         print("search_condition()")
-        mSearch = self.dynamicCall("SendCondition(String, String, int, int)", "0156", self.CONDITION_NAME, 9, 1) ## 조건식 이름, 인덱스 넣어서 바꿀 수 있게 수정하기
+        mSearch = self.dynamicCall("SendCondition(String, String, int, int)", "0156", self.CONDITION_NAME, self.CONDITION_INDEX, 1) ## 조건식 이름, 인덱스 넣어서 바꿀 수 있게 수정하기
         if mSearch != 1:
             print("조건 검색 실패")
         
@@ -621,6 +629,9 @@ class Kiwoom(QAxWidget):
             print("self.BOUGHT_STOCK_LIST 값 확인 :")
             for i in self.BOUGHT_STOCK_LIST:
                 print(self.BOUGHT_STOCK_LIST[i])
+                
+                
+            
             self.trade_stock_loop.exit()
             
         if sRQName == "주식틱차트조회요청":
@@ -689,37 +700,37 @@ class Kiwoom(QAxWidget):
     def cal_hoga(self, price):
         hoga_unit = 0
         
-        if price < 1000:
-            hoga_unit = 1
-        elif price >= 1000 and price <= 5000:
-             hoga_unit = 5
-        elif price > 5000 and price <= 10000:
-            hoga_unit = 10
-        elif price > 10000 and price <= 50000:
-            hoga_unit = 50
-        elif price > 50000 and price <= 100000:
-            hoga_unit = 100
-        elif price > 100000 and price <= 500000:
-            hoga_unit = 500
-        elif price > 500000:
-            hoga_unit = 1000
-        # 1월달 개편될 시 아래 코드로 교체할 것
         # if price < 1000:
         #     hoga_unit = 1
-        # elif price < 2000:
-        #      hoga_unit = 1
-        # elif price >= 2000 and price <= 5000:
-        #     hoga_unit = 5
-        # elif price > 5000 and price <= 20000:
+        # elif price >= 1000 and price <= 5000:
+        #      hoga_unit = 5
+        # elif price > 5000 and price <= 10000:
         #     hoga_unit = 10
-        # elif price > 20000 and price <= 50000:
+        # elif price > 10000 and price <= 50000:
         #     hoga_unit = 50
-        # elif price > 50000 and price <= 200000:
+        # elif price > 50000 and price <= 100000:
         #     hoga_unit = 100
-        # elif price > 200000 and price <= 500000:
+        # elif price > 100000 and price <= 500000:
         #     hoga_unit = 500
         # elif price > 500000:
         #     hoga_unit = 1000
+        # 1월달 개편될 시 아래 코드로 교체할 것
+        if price < 1000:
+            hoga_unit = 1
+        elif price < 2000:
+             hoga_unit = 1
+        elif price >= 2000 and price <= 5000:
+            hoga_unit = 5
+        elif price > 5000 and price <= 20000:
+            hoga_unit = 10
+        elif price > 20000 and price <= 50000:
+            hoga_unit = 50
+        elif price > 50000 and price <= 200000:
+            hoga_unit = 100
+        elif price > 200000 and price <= 500000:
+            hoga_unit = 500
+        elif price > 500000:
+            hoga_unit = 1000
             
             
         return hoga_unit
@@ -800,7 +811,7 @@ class Kiwoom(QAxWidget):
     # 백테스팅 기능 만들기:
     # 1.조건 검색식에 들어온 종목 opt10079(틱차트조회) 로 조건 검색식에 조회 되기 전, 후 데이터 가져와 엑셀로 저장하기
     # 2.backTest.py 클래스로 만들고 테스트 가능하게 만들기
-    
+    # 3.이미 구매한 목록에 있는 주식은 구매 X =
     # 트레이딩시 기록 남기기
     
     
