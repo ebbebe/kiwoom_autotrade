@@ -4,7 +4,7 @@ from PyQt5.QtTest import *
 from config_.errorCode import *
 import schedule
 import time
-import datetime
+from datetime import datetime
 import math
 import pandas as pd
 import csv
@@ -41,7 +41,6 @@ class Kiwoom(QAxWidget):
         self.password = "1234" # 비밀번호
         self.BUY = 1 # 신규매수
         self.SELL = 2 # 신규매도
-        self.puchase_quantity = 0
         
         self.BUY_STANDARD_AMOUNT = 500000 # 매수 비중
         self.LOSS_BASED_PERCENTAGE = -3 # 손절시 전량 매도 퍼센트 기준
@@ -50,14 +49,20 @@ class Kiwoom(QAxWidget):
         self.PROFIT_END_PERCENTAGE = 10 # 세번째 기준
         self.SELL_BEGINNING_PERCENTAGE = 20 # 첫번째 매도시 몇퍼센트 매도할 것인지
         self.SELL_MIDDLE_PERCENTAGE = 30 # 두번째 매도시 몇퍼센트 매도할 것인지
-        
+        self.IS_CONDITION_SEARCH = False # 조건검색에서 온 실시간데이터인지
         
         self.CONDITION_NAME = "8프로이상기준봉돌파"
         self.CONDITION_INDEX = 12
+        self.TRADE_COUNT = 0
+        self.TRADE_LIST = []
         
-        self.BOUGHT_STOCK_LIST = dict() # 보유 주식 리스트
+        
+        self.BOUGHT_STOCK_LIST = dict() # 보유 주식 딕셔너리
         self.account_stock_dict = {} # 영상 강의 학습용 딕셔너리
         self.not_account_stock_dict = {} # 영상 강의 학습용 딕셔너리
+        self.row_dict = [] # 거래기록 csv저장 리스트
+        
+        
         ########################
         
         
@@ -68,6 +73,8 @@ class Kiwoom(QAxWidget):
         self.use_money_percent = 0.5
         ########################
 
+        
+        
         
         
         
@@ -180,57 +187,90 @@ class Kiwoom(QAxWidget):
         if sRealType == "주식체결":
             # 추적중인 주식 체결 됐을 때 실행
             
-            try:
+            
+            
+            
+            
+            if self.IS_CONDITION_SEARCH: #처음 조건검색 종목편입시 매수주문
                 now_price = abs(float(self.dynamicCall("GetCommRealData(String, int)", sCode, 10)))
-                quantity = float(self.BOUGHT_STOCK_LIST[sCode]['보유수량'])
-                bought_price = float(self.BOUGHT_STOCK_LIST[sCode]['매입가'])
-                percent = round(((now_price - bought_price) / bought_price) * 100, 2)
+                
+                
+                hoga_unit = self.cal_hoga(now_price)
+                bought_price = now_price + hoga_unit
+                purchase_quantity = int(self.BUY_STANDARD_AMOUNT / bought_price) # 지정금액 근사치 해당하는 주식 매수수량 계산
+                print(f"purchase_quantity 확인: {purchase_quantity}")
+                self.trade_stock(sCode, purchase_quantity, self.BUY) # 매수 주문
+                
+                
+                
+                mystock_info = {"종목명" : "sName", "수익률" : 0, "보유수량" : purchase_quantity, "매입가" : bought_price}
+                self.BOUGHT_STOCK_LIST[sCode] = mystock_info
+                self.TRADE_LIST.append([self.BOUGHT_STOCK_LIST[sCode]['종목명'], sCode, now_price, bought_price, purchase_quantity, 0, "매수", datetime.now()])
+                self.TRADE_COUNT += 1
+                
+                # col_dict = ["종목명", "종목코드", "가격", "수량", "수익률", "거래종류", "거래시간"]
+                # self.row_dict.append([{"종목명": self.BOUGHT_STOCK_LIST[sCode]['종목명'], "종목코드": sCode, "가격": now_price, "수량": quantity, "수익률": percent, "거래종류": "매수", "거래시간": datetime.now()}])
+                # self.write_csv("매매기록", col_dict, self.row_dict)
+                
+                
+                
+                self.IS_CONDITION_SEARCH = False
+                
+            else: 
+                try: #너무 빠르게 많이 들어와 전량매도 후 BOUGHT_STOCK_LIST 에서 요소 삭제한 후에도 들어오는 것 무시하기 위함
+                    now_price = abs(float(self.dynamicCall("GetCommRealData(String, int)", sCode, 10)))
+                    print(f"BOUGHT_STOCK_LIST: {self.BOUGHT_STOCK_LIST}")
+                    quantity = self.BOUGHT_STOCK_LIST[sCode]['보유수량']
+                    bought_price = float(self.BOUGHT_STOCK_LIST[sCode]['매입가'])
+                    percent = round(((now_price - bought_price) / bought_price) * 100, 2)
 
-                self.BOUGHT_STOCK_LIST[sCode].update({"수익률" : percent})
-                print(f"{self.BOUGHT_STOCK_LIST[sCode]['종목명']}: {percent}% ")
-                
-                
-                # print(self.BOUGHT_STOCK_LIST[sCode])
-                
-                
-                
-                                
-                if percent <= self.LOSS_BASED_PERCENTAGE:
-                    #손실나서 전량 매도
-                    self.trade_stock(sCode, quantity, self.SELL)
+                    self.BOUGHT_STOCK_LIST[sCode].update({"수익률" : percent})
+                    print(f"{self.BOUGHT_STOCK_LIST[sCode]['종목명']}: {percent}% / 현재가: {now_price} / 수량: {quantity} / 구매가: {bought_price}")
                     
-                    print(f"{self.BOUGHT_STOCK_LIST[sCode]['종목명']} 손절(전량매도)")
+                    if percent <= self.LOSS_BASED_PERCENTAGE:
+                        #손실나서 전량 매도
+                        self.trade_stock(sCode, quantity, self.SELL)
+                        self.TRADE_LIST.append([self.BOUGHT_STOCK_LIST[sCode]['종목명'], sCode, now_price, bought_price, quantity, percent, "손절(전량매도)", datetime.now()])
+                        self.TRADE_COUNT += 1
+                        
+                        print(f"{self.BOUGHT_STOCK_LIST[sCode]['종목명']} 손절(전량매도)")
+                        
+                        
+                    elif (percent >= self.PROFIT_BEGINNING_PERCENTAGE) and (percent < self.PROFIT_MIDDLE_PERCENTAGE):
+                        # 첫번째 매도
+                        sell_quantity = math.floor(quantity * self.SELL_BEGINNING_PERCENTAGE / 100)
+                        if sell_quantity == 0:
+                            sell_quantity = 1
+                        self.trade_stock(sCode, sell_quantity, self.SELL)
+                        self.TRADE_LIST.append([self.BOUGHT_STOCK_LIST[sCode]['종목명'], sCode, now_price, bought_price, sell_quantity, percent, "첫번째 매도", datetime.now()])
+                        self.TRADE_COUNT += 1
+                        print("첫번째 매도")
+                        print(f"sell_quantity: {sell_quantity}")
+                        
+                    elif (percent >= self.PROFIT_MIDDLE_PERCENTAGE) and (percent < self.PROFIT_END_PERCENTAGE):
+                        # 두번째 매도
+                        sell_quantity = math.floor(quantity * self.SELL_MIDDLE_PERCENTAGE / 100)
+                        if sell_quantity == 0:
+                            sell_quantity = 1
+                        self.trade_stock(sCode, sell_quantity, self.SELL)
+                        self.TRADE_LIST.append([self.BOUGHT_STOCK_LIST[sCode]['종목명'], sCode, now_price, bought_price, sell_quantity, percent, "두번째 매도", datetime.now()])
+                        self.TRADE_COUNT += 1
+                        print("두번째 매도")
+                        print(f"sell_quantity: {sell_quantity}")
                     
-                    
-                elif (percent >= self.PROFIT_BEGINNING_PERCENTAGE) and (percent < self.PROFIT_MIDDLE_PERCENTAGE):
-                    # 첫번째 매도
-                    sell_quantity = math.floor(quantity * self.SELL_BEGINNING_PERCENTAGE / 100)
-                    if sell_quantity == 0:
-                        sell_quantity = 1
-                    self.trade_stock(sCode, sell_quantity, self.SELL)
-                    print("첫번째 매도")
-                    print(f"sell_quantity: {sell_quantity}")
-                    
-                elif (percent >= self.PROFIT_MIDDLE_PERCENTAGE) and (percent < self.PROFIT_END_PERCENTAGE):
-                    # 두번째 매도
-                    sell_quantity = math.floor(quantity * self.SELL_MIDDLE_PERCENTAGE / 100)
-                    if sell_quantity == 0:
-                        sell_quantity = 1
-                    self.trade_stock(sCode, sell_quantity, self.SELL)
-                    print("두번째 매도")
-                    print(f"sell_quantity: {sell_quantity}")
-                
-                elif percent >= self.PROFIT_END_PERCENTAGE :
-                    # 마지막(전량) 매도
-                    self.trade_stock(sCode, quantity, self.SELL)
-                    print("마지막(전량) 매도")
-                    print(f"sell_quantity: {quantity}")
-            except:
-                pass
-                
+                    elif percent >= self.PROFIT_END_PERCENTAGE :
+                        # 마지막(전량) 매도
+                        self.trade_stock(sCode, quantity, self.SELL)
+                        self.TRADE_LIST.append([self.BOUGHT_STOCK_LIST[sCode]['종목명'], sCode, now_price, bought_price, sell_quantity, percent, "세번째 매도", datetime.now()])
+                        self.TRADE_COUNT += 1
+                        print("마지막(전량) 매도")
+                        print(f"sell_quantity: {quantity}")
+                except:
+                    print()
             
         
         if sRealType == "종목프로그램매매":
+            
             pass
                 
 
@@ -246,15 +286,24 @@ class Kiwoom(QAxWidget):
         
         print(f"real_condition(): {sCode}, {sType}, {sConditionName}, {sConditionIndex}" )
         if sType == "I": #종목편입
-            self.get_stock_price(sCode)
+            
             # current_price = int(self.dynamicCall("GetCommData(QString, QString, int, QString", sCode, "매수", 0, "현재가"))
             # hoga_unit = self.cal_hoga(current_price) # 최소 호가 단위 계산
             # purchase_quantity = self.BUY_STANDARD_AMOUNT / (current_price + hoga_unit) # 지정금액 근사치 해당하는 주식 매수수량 계산
             # print(f"self.puchase_quantity: {self.puchase_quantity}")
-            print(f"종목편입돼서 사려함, 구매수량은: {self.purchase_quantity}")
-            self.trade_stock(sCode, self.purchase_quantity, self.BUY) # 매수 주문
+            #---
+            # self.get_stock_price(sCode)
+            # self.purchase_quantity = 1
+            # print(f"종목편입, 구매수량: {self.purchase_quantity}")
+            # self.trade_stock(sCode, self.purchase_quantity, self.BUY) # 매수 주문
             self.dynamicCall("SetRealReg(String, String, String, String)", "9001", sCode, "10", 1)
             print("조건검색 종목편입: %s " %sCode)
+            
+            self.IS_CONDITION_SEARCH = True
+            
+            
+            
+            
         elif sType == "D": #종목이탈
             print("조건검색 종목이탈: %s " %sCode)
         
@@ -347,7 +396,19 @@ class Kiwoom(QAxWidget):
             trade (_type_): 구매(1) 판매(2)
         """
         self.dynamicCall("SendOrder(String, String, String, Long, String, Long, Long, String, String)", ["주식거래", "2003", self.account_num, trade, code, quantity, 0, "03", ""]) #(매수 또는 매도)
+        self.TRADE_COUNT += 1
+        if self.TRADE_COUNT >= 3:
+            print(f"{self.TRADE_COUNT}회 이상 매매하여 csv파일에 기록")
+            with open('매매기록.csv','a',newline='') as f:
+                writer = csv.writer(f)
+                for i in self.TRADE_LIST:
+                    writer.writerow(i)
+                
+                self.TRADE_LIST.clear()
+                self.TRADE_COUNT = 0
+                print(f"TRADE_LIST 초기화 확인: {self.TRADE_LIST}")
 
+        
         
     
     def detail_account_info(self):
@@ -666,6 +727,9 @@ class Kiwoom(QAxWidget):
                 wr.writeheader()
                 for ele in sample_dict:
                     wr.writerow(ele)
+                    
+                    
+                    
 
 
             
@@ -690,14 +754,38 @@ class Kiwoom(QAxWidget):
             self.purchase_quantity = int(self.BUY_STANDARD_AMOUNT / (current_price + hoga_unit)) # 지정금액 근사치 해당하는 주식 매수수량 계산
             print(f"self.purchase_quantity:  {self.purchase_quantity}")
             self.stock_price_loop.exit()
-            
-            
-            
 
-            
+
+
+
+    def write_csv(self, file_name, col_dict, row_dict):
+        """csv파일 저장
+
+        Args:
+            file_name (_type_): 저장할 파일명
+            col_dict (_type_): 열(주제)
+            row_dict (_type_): 행(데이터)
+        """
+        
+        
+        # col_name=["체결시간","현재가","거래량","시가","고가","저가"]
+        with open(file_name, 'a', newline="") as csvFile:
+            wr = csv.DictWriter(csvFile, fieldnames=col_dict)
+            wr.writeheader()
+            for ele in row_dict:
+                wr.writerow(ele)
+
 
     
     def cal_hoga(self, price):
+        """호가단위 계산함수
+
+        Args:
+            price (_type_): 가격
+
+        Returns:
+            _type_: 호가단위
+        """
         hoga_unit = 0
         
         # if price < 1000:
@@ -807,12 +895,13 @@ class Kiwoom(QAxWidget):
         self.stock_price_loop.exec()
         
     # 22일(금요일) 할 것 정리
+    
     # 매수 금액 일정하게 맞추는 기능 테스트 (real_condition_slot)
     # 백테스팅 기능 만들기:
     # 1.조건 검색식에 들어온 종목 opt10079(틱차트조회) 로 조건 검색식에 조회 되기 전, 후 데이터 가져와 엑셀로 저장하기
     # 2.backTest.py 클래스로 만들고 테스트 가능하게 만들기
-    # 3.이미 구매한 목록에 있는 주식은 구매 X =
-    # 트레이딩시 기록 남기기
+    # 3.이미 구매한 목록에 있는 주식은 구매 X
+    # 4.트레이딩시 기록 남기기
     
     
     # 우선도 낮은 것
@@ -823,6 +912,8 @@ class Kiwoom(QAxWidget):
     # 과거 장 데이터와 조건검색 판매 조건까지 설정해서 비교 가능한지 알아보기
     # 서버에 올려서 24시간 돌아가게 만들기
     
+    
     # 알아두어야 할 것
+    
     # 1월 1일부터 호가 최소 단위 개편되어 다시 수정해야함
     
