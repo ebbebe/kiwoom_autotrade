@@ -31,7 +31,7 @@ class Kiwoom(QAxWidget):
         # 파일 용량이 100MB를 넘어가면 10개까지 로그를 남기고 싶을때 fileHandler를 이렇게 셋팅해주면 된다
         '''
         fileMaxByte = 1024 * 1024 * 100 #100MB
-        fileHandler = logging.handlers.RotatingFileHandler('./myLoggerTest.log', maxBytes=fileMaxByte, backupCount=10)
+        fileHandler = logging.handlers.RotatingFileHandler('./myLog.log', maxBytes=fileMaxByte, backupCount=10)
         '''
 
         # 각 핸들러에 포매터를 지정한다.
