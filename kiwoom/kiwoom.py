@@ -268,7 +268,7 @@ class Kiwoom(QAxWidget):
 
                     self.BOUGHT_STOCK_LIST[sCode].update({"수익률" : percent})
                     self.logger.info(f"{self.BOUGHT_STOCK_LIST[sCode]['종목명']}: {percent}% / 현재가: {now_price} / 수량: {quantity} / 구매가: {bought_price}")
-
+                    #                                                                           15150 / 13 / 196950
                     if percent <= self.LOSS_BASED_PERCENTAGE:
                         #손실나서 전량 매도
                         self.trade_stock(sCode, quantity, self.SELL)
@@ -353,7 +353,7 @@ class Kiwoom(QAxWidget):
             
             
     def chejan_slot(self, sGubun, nItemCnt, sFidList):
-        self.logger.info(f"체결 데이터:\nsGubun: {sGubun}, nItemCnt: {nItemCnt}, sFidList: {sFidList}")
+        # self.logger.info(f"체결 데이터:\nsGubun: {sGubun}, nItemCnt: {nItemCnt}, sFidList: {sFidList}")
         # sGubun=1(잔고변경) : 9201;9001;917;916;302;10;930;931;932;933;945;946;950;951;27;28;307;8019;957;958;918;990;991;992;993;959;924;10010;25;11;12;306;305;970;10012;10025;10011
         # sGubun=0(접수및체결) : 9201;9203;9205;9001;912;913;302;900;901;902;903;904;905;906;907;908;909;910;911;10;27;28;914;915;938;939;919;920;921;922;923;949;10010;969;819
         
@@ -448,9 +448,11 @@ class Kiwoom(QAxWidget):
                 for i in self.TRADE_LIST:
                     writer.writerow(i)
                 
+                
+                self.logger.info(f"TRADE_LIST 값 확인: {self.TRADE_LIST}")
                 self.TRADE_LIST.clear()
-                self.TRADE_COUNT = 0
                 self.logger.info(f"TRADE_LIST 초기화 확인: {self.TRADE_LIST}")
+                self.TRADE_COUNT = 0
 
         
         
@@ -943,12 +945,12 @@ class Kiwoom(QAxWidget):
         
     # 22일(금요일) 할 것 정리
     
-    # 매수 금액 일정하게 맞추는 기능 테스트 (real_condition_slot)
-    # 백테스팅 기능 만들기:
-    # 1.조건 검색식에 들어온 종목 opt10079(틱차트조회) 로 조건 검색식에 조회 되기 전, 후 데이터 가져와 엑셀로 저장하기
-    # 2.backTest.py 클래스로 만들고 테스트 가능하게 만들기
-    # 3.이미 구매한 목록에 있는 주식은 구매 X
-    # 4.트레이딩시 기록 남기기
+    # A. 백테스팅 기능 만들기:
+        # 1.조건 검색식에 들어온 종목 opt10079(틱차트조회) 로 조건 검색식에 조회 되기 전, 후 데이터 가져와 엑셀로 저장하기
+        # 2.backTest.py 클래스로 만들고 테스트 가능하게 만들기
+    # B. getcommdata 로 매입가 불러왔는데 총매입가 들어오는 문제 (수익률 계산 문제)
+    # C. 종목편입되자마자 이탈하는 종목에 대한 구매 불가 문제
+    # D. 분할 매도 빠르게 팔아버리는 문제
     
     
     # 우선도 낮은 것
