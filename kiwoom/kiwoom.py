@@ -91,7 +91,7 @@ class Kiwoom(QAxWidget):
         self.SELL_MIDDLE_PERCENTAGE = 30 # 두번째 매도시 몇퍼센트 매도할 것인지
         self.IS_CONDITION_SEARCH = False # 조건검색에서 온 실시간데이터인지
         
-        self.CONDITION_NAME = "8프로이상기준봉돌파"
+        self.CONDITION_NAME = "eb"
         self.CONDITION_INDEX = 12
         self.TRADE_COUNT = 0
         self.TRADE_LIST = []
@@ -234,21 +234,20 @@ class Kiwoom(QAxWidget):
                 now_price = abs(float(self.dynamicCall("GetCommRealData(String, int)", sCode, 10)))
                 
                 
-                hoga_unit = self.cal_hoga(now_price)
-                bought_price = now_price + hoga_unit
-                purchase_quantity = int(self.BUY_STANDARD_AMOUNT / bought_price) # 지정금액 근사치 해당하는 주식 매수수량 계산
+                # hoga_unit = self.cal_hoga(now_price)
+                # bought_price = now_price + hoga_unit
+                purchase_quantity = int(self.BUY_STANDARD_AMOUNT / now_price) # 지정금액 근사치 해당하는 주식 매수수량 계산
                 self.logger.info(f"purchase_quantity 확인: {purchase_quantity}")
                 
-                isPresent = any(self.BOUGHT_STOCK_LIST) # 구매리스트에 종목 조내시 매수X
-                if not isPresent:
+                    
+                if sCode in self.BOUGHT_STOCK_LIST:
+                    self.logger.info("이미 구매리스트에 종목 존재하여 매수 X")
+                else:
                     self.trade_stock(sCode, purchase_quantity, self.BUY) # 매수 주문
-                
-                
-                
-                mystock_info = {"종목명" : "sName", "수익률" : 0, "보유수량" : purchase_quantity, "매입가" : bought_price}
-                self.BOUGHT_STOCK_LIST[sCode] = mystock_info
-                self.TRADE_LIST.append([self.BOUGHT_STOCK_LIST[sCode]['종목명'], sCode, now_price, bought_price, purchase_quantity, 0, "매수", datetime.now()])
-                self.TRADE_COUNT += 1
+                    mystock_info = {"종목명" : "sName", "수익률" : 0, "보유수량" : purchase_quantity, "매입가" : now_price}
+                    self.BOUGHT_STOCK_LIST[sCode] = mystock_info
+                    self.TRADE_LIST.append([self.BOUGHT_STOCK_LIST[sCode]['종목명'], sCode, now_price, now_price, purchase_quantity, 0, "매수", datetime.now()])
+                    self.TRADE_COUNT += 1
                 
                 # col_dict = ["종목명", "종목코드", "가격", "수량", "수익률", "거래종류", "거래시간"]
                 # self.row_dict.append([{"종목명": self.BOUGHT_STOCK_LIST[sCode]['종목명'], "종목코드": sCode, "가격": now_price, "수량": quantity, "수익률": percent, "거래종류": "매수", "거래시간": datetime.now()}])
@@ -310,6 +309,11 @@ class Kiwoom(QAxWidget):
                         
                 except Exception as e:
                     self.logger.warning(f"real_data_slot() try문 오류 {e}")
+                    self.dynamicCall("SetRealRemove(String, String)", "ALL", sCode) #바로 실시간등록 해제되지 않아 에러 발생시 다시한번 실행
+                    self.logger.warning(f"real_data_slot() 실시간등록해제 {sCode}")
+                    
+                    
+                    
             
         
         if sRealType == "종목프로그램매매":
@@ -329,16 +333,6 @@ class Kiwoom(QAxWidget):
         
         self.logger.info(f"real_condition(): {sCode}, {sType}, {sConditionName}, {sConditionIndex}")
         if sType == "I": #종목편입
-            
-            # current_price = int(self.dynamicCall("GetCommData(QString, QString, int, QString", sCode, "매수", 0, "현재가"))
-            # hoga_unit = self.cal_hoga(current_price) # 최소 호가 단위 계산
-            # purchase_quantity = self.BUY_STANDARD_AMOUNT / (current_price + hoga_unit) # 지정금액 근사치 해당하는 주식 매수수량 계산
-            # print(f"self.puchase_quantity: {self.puchase_quantity}")
-            #---
-            # self.get_stock_price(sCode)
-            # self.purchase_quantity = 1
-            # print(f"종목편입, 구매수량: {self.purchase_quantity}")
-            # self.trade_stock(sCode, self.purchase_quantity, self.BUY) # 매수 주문
             self.dynamicCall("SetRealReg(String, String, String, String)", "9001", sCode, "10", 1)
             self.logger.info("조건검색 종목편입: %s " %sCode)
             
@@ -390,10 +384,10 @@ class Kiwoom(QAxWidget):
                 self.BOUGHT_STOCK_LIST[sCode].update({"종목명" : sName})
                 self.BOUGHT_STOCK_LIST[sCode].update({"수익률" : profit_percent})
                 self.BOUGHT_STOCK_LIST[sCode].update({"보유수량" : sQuantity})
-                self.BOUGHT_STOCK_LIST[sCode].update({"매입가" : total_bought_sPrice})
+                self.BOUGHT_STOCK_LIST[sCode].update({"매입가" : bought_sPrice})
             else:
                 self.logger.info("요소 없음")
-                mystock_info = {"종목명" : sName, "수익률" : profit_percent, "보유수량" : sQuantity, "매입가" : total_bought_sPrice}
+                mystock_info = {"종목명" : sName, "수익률" : profit_percent, "보유수량" : sQuantity, "매입가" : bought_sPrice}
                 self.BOUGHT_STOCK_LIST[sCode] = mystock_info
                 
             if sell_buy == "매도" and sQuantity == "0":
@@ -836,22 +830,7 @@ class Kiwoom(QAxWidget):
             _type_: 호가단위
         """
         hoga_unit = 0
-        
-        # if price < 1000:
-        #     hoga_unit = 1
-        # elif price >= 1000 and price <= 5000:
-        #      hoga_unit = 5
-        # elif price > 5000 and price <= 10000:
-        #     hoga_unit = 10
-        # elif price > 10000 and price <= 50000:
-        #     hoga_unit = 50
-        # elif price > 50000 and price <= 100000:
-        #     hoga_unit = 100
-        # elif price > 100000 and price <= 500000:
-        #     hoga_unit = 500
-        # elif price > 500000:
-        #     hoga_unit = 1000
-        # 1월달 개편될 시 아래 코드로 교체할 것
+
         if price < 1000:
             hoga_unit = 1
         elif price < 2000:
@@ -948,9 +927,10 @@ class Kiwoom(QAxWidget):
     # A. 백테스팅 기능 만들기:
         # 1.조건 검색식에 들어온 종목 opt10079(틱차트조회) 로 조건 검색식에 조회 되기 전, 후 데이터 가져와 엑셀로 저장하기
         # 2.backTest.py 클래스로 만들고 테스트 가능하게 만들기
-    # B. getcommdata 로 매입가 불러왔는데 총매입가 들어오는 문제 (수익률 계산 문제)
-    # C. 종목편입되자마자 이탈하는 종목에 대한 구매 불가 문제
-    # D. 분할 매도 빠르게 팔아버리는 문제
+    # C. 종목편입되자마자 이탈하는 종목에 대한 구매 불가 문제 확인하기
+    # D. 분할 매도 빠르게 팔아버리는 문제 
+    # E. 시장 시작전 실행시켜놓으면 장이 시작할 때 에러 나는 문제
+    # F. BOUGHT_STOCK_LIST 종목명 sName 으로 저장하는 문제
     
     
     # 우선도 낮은 것
