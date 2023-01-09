@@ -140,7 +140,7 @@ class Kiwoom(QAxWidget):
         # self.regit_realTime_data()
         # self.get_stock_price("446070")
         self.regit_realReg()
-        
+        self.logger.info("이 시점부터 다시 정상실행")
         
 
     
@@ -258,12 +258,14 @@ class Kiwoom(QAxWidget):
                 self.IS_CONDITION_SEARCH = False
                 
             else: 
-                try: #너무 빠르게 많이 들어와 전량매도 후 BOUGHT_STOCK_LIST 에서 요소 삭제한 후에도 들어오는 것 무시하기 위함
-                    now_price = abs(float(self.dynamicCall("GetCommRealData(String, int)", sCode, 10)))
+                try: #너무 빠르게 많이 들어와 전량매도 후 BOUGHT_STOCK_LIST 에서 요소 삭제한 후에도 들어와서 에러나는 것 무시하기 위함
                     self.logger.info(f"BOUGHT_STOCK_LIST: {self.BOUGHT_STOCK_LIST}")
-                    quantity = self.BOUGHT_STOCK_LIST[sCode]['보유수량']
+                    
+                    now_price = abs(float(self.dynamicCall("GetCommRealData(String, int)", sCode, 10)))
+                    quantity = float(self.BOUGHT_STOCK_LIST[sCode]['보유수량'])
                     bought_price = float(self.BOUGHT_STOCK_LIST[sCode]['매입가'])
                     percent = round(((now_price - bought_price) / bought_price) * 100, 2)
+                    
 
                     self.BOUGHT_STOCK_LIST[sCode].update({"수익률" : percent})
                     self.logger.info(f"{self.BOUGHT_STOCK_LIST[sCode]['종목명']}: {percent}% / 현재가: {now_price} / 수량: {quantity} / 구매가: {bought_price}")
@@ -279,7 +281,7 @@ class Kiwoom(QAxWidget):
                         
                     elif (percent >= self.PROFIT_BEGINNING_PERCENTAGE) and (percent < self.PROFIT_MIDDLE_PERCENTAGE):
                         # 첫번째 매도
-                        sell_quantity = math.floor(quantity * self.SELL_BEGINNING_PERCENTAGE / 100)
+                        sell_quantity = math.floor(quantity * float(self.SELL_BEGINNING_PERCENTAGE) / 100)
                         if sell_quantity == 0:
                             sell_quantity = 1
                         self.trade_stock(sCode, sell_quantity, self.SELL)
@@ -290,7 +292,7 @@ class Kiwoom(QAxWidget):
                         
                     elif (percent >= self.PROFIT_MIDDLE_PERCENTAGE) and (percent < self.PROFIT_END_PERCENTAGE):
                         # 두번째 매도
-                        sell_quantity = math.floor(quantity * self.SELL_MIDDLE_PERCENTAGE / 100)
+                        sell_quantity = math.floor(quantity * float(self.SELL_MIDDLE_PERCENTAGE) / 100)
                         if sell_quantity == 0:
                             sell_quantity = 1
                         self.trade_stock(sCode, sell_quantity, self.SELL)
