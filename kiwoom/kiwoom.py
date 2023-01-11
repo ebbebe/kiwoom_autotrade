@@ -2,11 +2,7 @@ from PyQt5.QAxContainer import *
 from PyQt5.QtCore import *
 from PyQt5.QtTest import *
 from config_.errorCode import *
-import schedule
-import time
 from datetime import datetime
-import math
-import pandas as pd
 import csv
 import logging
 import logging
